@@ -17,6 +17,7 @@ package io.fabric8.kubernetes.client.server.mock;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.Status;
@@ -203,14 +204,24 @@ public class KubernetesCrudDispatcher extends CrudDispatcher {
           status = removeStatus(source);
         }
 
+        MediaType type = null;
         if (contentType != null) {
-          MediaType type = MediaType.parse(contentType);
-          if (!type.subtype().equals(OperationSupport.JSON_PATCH.subtype())) {
+          type = MediaType.parse(contentType);
+          if (!type.subtype().equals(OperationSupport.JSON_PATCH.subtype())
+              && !type.subtype().equals(OperationSupport.JSON_MERGE_PATCH.subtype())) {
             response.setResponseCode(HttpURLConnection.HTTP_UNSUPPORTED_TYPE);
             return response;
           }
         }
-        JsonNode updated = JsonPatch.apply(patch, source);
+
+        JsonNode updated;
+        if ( type == null || type.subtype().equals(OperationSupport.JSON_PATCH.subtype() ) )  {
+          updated = JsonPatch.apply(patch, source);
+        } else {
+          assert OperationSupport.JSON_MERGE_PATCH.subtype().equals(type.subtype());
+          ObjectReader objectReader = context.getMapper().readerForUpdating(source);
+          updated = objectReader.readValue(s);
+        }
 
         if (isStatusPath(path)) {
           status = removeStatus(updated);
